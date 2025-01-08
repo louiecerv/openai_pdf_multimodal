@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import letter
 from io import BytesIO
 from PyPDF2 import PdfReader
 from PIL import Image
+import fitz  # PyMuPDF
 
 # OpenAI API Key
 api_key = os.getenv("OPENAI_API_KEY")  # Ensure this environment variable is set
@@ -17,6 +18,15 @@ headers = {
 }
 
 def extract_text_and_images_from_pdf(pdf_file):
+    """
+    Extracts text and images from a PDF file.
+
+    Args:
+        pdf_file (UploadedFile): The uploaded PDF file.
+
+    Returns:
+        tuple: A tuple containing the extracted text and images.
+    """
     text_content = ""
     images = []
 
@@ -28,9 +38,18 @@ def extract_text_and_images_from_pdf(pdf_file):
     for page in pdf_reader.pages:
         text_content += page.extract_text()
 
-    # Extract images (This part requires creating images using ReportLab for demonstration)
-    # In a real scenario, extracting images from PDF is more complex and usually done with specialized libraries.
-    # Add image extraction logic if needed
+    # Extract images using PyMuPDF
+    doc = fitz.open(stream=pdf_stream)
+    for page_index in range(len(doc)):
+        page = doc.load_page(page_index)
+        image_list = page.get_images()
+        for img_index, img in enumerate(image_list):
+            xref = img[0]
+            base_image = doc.extract_image(xref)
+            image_bytes = base_image["image"]
+            # Convert image bytes to a PIL Image object
+            image = Image.open(BytesIO(image_bytes))
+            images.append(image)
 
     return text_content, images
 
