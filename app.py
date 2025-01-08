@@ -1,57 +1,80 @@
 import os
 import base64
-import requests
-import streamlit as st
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
+import io
 from io import BytesIO
-from PyPDF2 import PdfReader
+
+import streamlit as st
 from PIL import Image
+from PyPDF2 import PdfReader
 import fitz  # PyMuPDF
+from openai import OpenAI
 
 # OpenAI API Key
-api_key = os.getenv("OPENAI_API_KEY")  # Ensure this environment variable is set
+api_key = os.getenv("OPENAI_API_KEY")
 
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {api_key}"
-}
+client = OpenAI(api_key=api_key)
 
 def extract_text_and_images_from_pdf(pdf_file):
-    """
-    Extracts text and images from a PDF file.
+    try:
+        text_content = ""
+        image_urls = []
 
-    Args:
-        pdf_file (UploadedFile): The uploaded PDF file.
+        pdf_stream = BytesIO(pdf_file.read())
 
-    Returns:
-        tuple: A tuple containing the extracted text and images.
-    """
-    text_content = ""
-    images = []
+        # Extract text using PdfReader
+        pdf_reader = PdfReader(pdf_stream)
+        for page in pdf_reader.pages:
+            text_content += page.extract_text()
 
-    # Convert UploadedFile to BytesIO for compatibility
-    pdf_stream = BytesIO(pdf_file.read())
+        # Extract images using PyMuPDF
+        doc = fitz.open(stream=pdf_stream)
+        for page_index in range(len(doc)):
+            page = doc.load_page(page_index)
+            image_list = page.get_images()
+            for img_index, img in enumerate(image_list):
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                image = Image.open(BytesIO(image_bytes))
+                # Resize image (optional)
+                image.thumbnail((512, 512))  # Adjust size as needed
 
-    # Extract text using PdfReader
-    pdf_reader = PdfReader(pdf_stream)
-    for page in pdf_reader.pages:
-        text_content += page.extract_text()
+                # Encode the image as base64 and create a data URL
+                buffered = io.BytesIO()
+                image.save(buffered, format="JPEG")
+                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                data_url = f"data:image/jpeg;base64,{img_str}"
+                image_urls.append(data_url)
 
-    # Extract images using PyMuPDF
-    doc = fitz.open(stream=pdf_stream)
-    for page_index in range(len(doc)):
-        page = doc.load_page(page_index)
-        image_list = page.get_images()
-        for img_index, img in enumerate(image_list):
-            xref = img[0]
-            base_image = doc.extract_image(xref)
-            image_bytes = base_image["image"]
-            # Convert image bytes to a PIL Image object
-            image = Image.open(BytesIO(image_bytes))
-            images.append(image)
+        return text_content, image_urls
+    except Exception as e:
+        st.error(f"An error occurred during PDF processing: {e}")
+        return "", []
 
-    return text_content, images
+def generate_ai_response(text_content, image_urls, text_prompt):
+    try:
+        # Construct the messages list with the prompt and base64-encoded image URLs
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": text_prompt},
+                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
+                ]
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=2048,
+        )
+
+        content_string = response.choices[0].message.content
+        return content_string
+    except Exception as e:
+        st.error(f"An error occurred during AI response generation: {e}")
+        return ""
 
 def main():
     st.title("Multimodal PDF Processing using GPT-4 Turbo Model")
@@ -67,47 +90,25 @@ def main():
 
     st.write("Upload a PDF file for analysis.")
 
-    # File upload for PDF
     uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
     if uploaded_pdf is not None:
-        text_content, images = extract_text_and_images_from_pdf(uploaded_pdf)
+        text_content, image_urls = extract_text_and_images_from_pdf(uploaded_pdf)
 
-        # Display extracted text
         st.subheader("Extracted Text")
         st.text(text_content)
 
-        # Display extracted images
-        if images:
-            st.subheader("Extracted Images")
-            for img in images:
-                st.image(img, caption="Extracted Image", use_container_width=True)
+        text_prompt = st.text_area("Enter a text prompt for the AI model:", "")
 
-        # Prepare the multimodal payload
-        payload = {
-            "model": "gpt-4-turbo",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": text_content}
-                        # Images can be added here if extracted
-                    ]
-                }
-            ],
-            "max_tokens": 2048,
-        }
+        if image_urls:
+            st.subheader("Extracted Images")
+            for img_url in image_urls:
+                st.image(img_url, caption="Extracted Image", use_container_width=True)
 
         if st.button("Generate Response"):
             with st.spinner("Processing..."):
-                response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-                if response.status_code != 200:
-                    st.error(f"Error: {response.status_code} - {response.text}")
-                else:
-                    content = response.json()
-                    content_string = content['choices'][0]['message']['content']
-                    st.success("Response generated!")
-                    st.markdown(f"AI Response: {content_string}")
+                ai_response = generate_ai_response(text_content, image_urls, text_prompt)
+                st.success("Response generated!")
+                st.markdown(f"AI Response: {ai_response}")
 
 if __name__ == "__main__":
     main()
