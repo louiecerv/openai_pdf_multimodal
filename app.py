@@ -12,10 +12,12 @@ import fitz  # PyMuPDF
 from openai import OpenAI
 
 # OpenAI API Key
-api_key = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=api_key)
-
+try:
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = OpenAI(api_key=api_key)
+except Exception as e:
+    st.error(f"An error occurred during OpenAI client initialization: {e}")
+    st.stop()
 
 def extract_text_and_images_from_pdf(pdf_file):
     try:
