@@ -2,6 +2,8 @@ import os
 import base64
 import io
 from io import BytesIO
+import tempfile
+import time
 
 import streamlit as st
 from PIL import Image
@@ -14,42 +16,59 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=api_key)
 
+
 def extract_text_and_images_from_pdf(pdf_file):
     try:
         text_content = ""
         image_urls = []
 
-        pdf_stream = BytesIO(pdf_file.read())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = os.path.join(temp_dir, "uploaded.pdf")
+            with open(pdf_path, "wb") as f:
+                f.write(pdf_file.read())
 
-        # Extract text using PdfReader
-        pdf_reader = PdfReader(pdf_stream)
-        for page in pdf_reader.pages:
-            text_content += page.extract_text()
+            # Extract text using PdfReader
+            with open(pdf_path, "rb") as pdf_stream:
+                pdf_reader = PdfReader(pdf_stream)
+                for page in pdf_reader.pages:
+                    text_content += page.extract_text()
 
-        # Extract images using PyMuPDF
-        doc = fitz.open(stream=pdf_stream)
-        for page_index in range(len(doc)):
-            page = doc.load_page(page_index)
-            image_list = page.get_images()
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image = Image.open(BytesIO(image_bytes))
-                # Resize image (optional)
-                image.thumbnail((512, 512))  # Adjust size as needed
+            # Introduce a small delay
+            time.sleep(1)  # Wait for 1 second
 
-                # Encode the image as base64 and create a data URL
-                buffered = io.BytesIO()
-                image.save(buffered, format="JPEG")
-                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                data_url = f"data:image/jpeg;base64,{img_str}"
-                image_urls.append(data_url)
+            # Extract images using PyMuPDF
+            doc = fitz.open(pdf_path)
+            for page_index in range(len(doc)):
+                page = doc.load_page(page_index)
+                image_list = page.get_images()
+                for img_index, img in enumerate(image_list):
+                    xref = img[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image = Image.open(BytesIO(image_bytes))
+                    # Resize image (optional)
+                    image.thumbnail((512, 512))  # Adjust size as needed
+
+                    # Save the image to the temporary directory
+                    image_path = os.path.join(
+                        temp_dir, f"image_{page_index}_{img_index}.jpg"
+                    )
+                    image.save(image_path, format="JPEG")
+
+                    # Encode the image as base64 and create a data URL
+                    with open(image_path, "rb") as f:
+                        img_str = base64.b64encode(f.read()).decode("utf-8")
+                    data_url = f"data:image/jpeg;base64,{img_str}"
+                    image_urls.append(data_url)
+
+            # Close the fitz document
+            doc.close()
 
         return text_content, image_urls
     except Exception as e:
         st.error(f"An error occurred during PDF processing: {e}")
         return "", []
+
 
 def generate_ai_response(text_content, image_urls, text_prompt):
     try:
@@ -59,8 +78,11 @@ def generate_ai_response(text_content, image_urls, text_prompt):
                 "role": "user",
                 "content": [
                     {"type": "text", "text": text_prompt},
-                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
-                ]
+                    *[
+                        {"type": "image_url", "image_url": {"url": url}}
+                        for url in image_urls
+                    ],
+                ],
             }
         ]
 
@@ -75,6 +97,7 @@ def generate_ai_response(text_content, image_urls, text_prompt):
     except Exception as e:
         st.error(f"An error occurred during AI response generation: {e}")
         return ""
+
 
 def main():
     st.title("Multimodal PDF Processing using GPT-4 Turbo Model")
@@ -92,7 +115,9 @@ def main():
 
     uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
     if uploaded_pdf is not None:
-        text_content, image_urls = extract_text_and_images_from_pdf(uploaded_pdf)
+        text_content, image_urls = extract_text_and_images_from_pdf(
+            uploaded_pdf
+        )
 
         st.subheader("Extracted Text")
         st.text(text_content)
@@ -102,13 +127,18 @@ def main():
         if image_urls:
             st.subheader("Extracted Images")
             for img_url in image_urls:
-                st.image(img_url, caption="Extracted Image", use_container_width=True)
+                st.image(
+                    img_url, caption="Extracted Image", use_container_width=True
+                )
 
         if st.button("Generate Response"):
             with st.spinner("Processing..."):
-                ai_response = generate_ai_response(text_content, image_urls, text_prompt)
+                ai_response = generate_ai_response(
+                    text_content, image_urls, text_prompt
+                )
                 st.success("Response generated!")
                 st.markdown(f"AI Response: {ai_response}")
+
 
 if __name__ == "__main__":
     main()

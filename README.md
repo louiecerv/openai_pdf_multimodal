@@ -11,3 +11,5 @@ short_description: Implement the Multimodal for PDFs
 ---
 
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+
+# replace with a full README later
