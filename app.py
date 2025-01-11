@@ -62,10 +62,15 @@ def extract_text_and_images(file_path):
 def generate_ai_response(text_content, image_urls, text_prompt):
     try:
         if image_urls:
-            messages = [
-                    {"role": "user", "content": ["type": "text": f"Perform the task {text_prompt} on the provided images)",
-                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]]}
+           messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text_prompt},
+                        *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
                     ]
+                }
+            ]
         
         else:
             messages = [{"role": "user", "content": f"{text_prompt} Analyze the text: {text_content}"}]
