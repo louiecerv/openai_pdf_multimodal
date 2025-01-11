@@ -90,7 +90,7 @@ def main():
 
     st.title("Multimodal File Processing using GPT-4 Turbo Model")
 
-    uploaded_file = st.file_uploader("Upload a File (PDF, JPG, PNG, JPEG)", type=None)
+    uploaded_file = st.file_uploader("Upload a File (PDF, JPG, PNG, JPEG)", type=["pdf", "jpg", "jpeg", "png"])
     if uploaded_file is not None:
         temp_dir = tempfile.mkdtemp()
         file_path = os.path.join(temp_dir, uploaded_file.name)
