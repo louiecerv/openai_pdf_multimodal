@@ -2,6 +2,8 @@ import os
 import base64
 import io
 from io import BytesIO
+import tempfile
+import shutil
 
 import streamlit as st
 from PIL import Image
@@ -14,20 +16,18 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=api_key)
 
-def extract_text_and_images_from_pdf(pdf_file):
+def extract_text_and_images_from_pdf(pdf_file_path):
     try:
         text_content = ""
         image_urls = []
 
-        pdf_stream = BytesIO(pdf_file.read())
-
         # Extract text using PdfReader
-        pdf_reader = PdfReader(pdf_stream)
+        pdf_reader = PdfReader(pdf_file_path)
         for page in pdf_reader.pages:
             text_content += page.extract_text()
 
         # Extract images using PyMuPDF
-        doc = fitz.open(stream=pdf_stream)
+        doc = fitz.open(pdf_file_path)
         for page_index in range(len(doc)):
             page = doc.load_page(page_index)
             image_list = page.get_images()
@@ -53,16 +53,29 @@ def extract_text_and_images_from_pdf(pdf_file):
 
 def generate_ai_response(text_content, image_urls, text_prompt):
     try:
-        # Construct the messages list with the prompt and base64-encoded image URLs
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": text_prompt},
-                    *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
-                ]
-            }
-        ]
+
+        if len(image_urls) > 0:    
+            # Construct the messages list with the prompt and base64-encoded image URLs
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Perform this task {text_prompt} on the images:"},
+                        *[{"type": "image_url", "image_url": {"url": url}} for url in image_urls]
+                    ]
+                }
+            ]
+
+        else:
+            # Construct the prompt on the extracted text only
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Perform this task {text_prompt} on this text {text_content}"}
+                    ]
+                }
+            ]
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -92,7 +105,13 @@ def main():
 
     uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
     if uploaded_pdf is not None:
-        text_content, image_urls = extract_text_and_images_from_pdf(uploaded_pdf)
+        # Save the uploaded PDF to a temporary directory
+        temp_dir = tempfile.mkdtemp()
+        pdf_file_path = os.path.join(temp_dir, uploaded_pdf.name)
+        with open(pdf_file_path, "wb") as f:
+            f.write(uploaded_pdf.getvalue())
+
+        text_content, image_urls = extract_text_and_images_from_pdf(pdf_file_path)
 
         st.subheader("Extracted Text")
         st.text(text_content)
@@ -109,6 +128,9 @@ def main():
                 ai_response = generate_ai_response(text_content, image_urls, text_prompt)
                 st.success("Response generated!")
                 st.markdown(f"AI Response: {ai_response}")
+
+        # Clean up the temporary directory
+        shutil.rmtree(temp_dir)
 
 if __name__ == "__main__":
     main()
