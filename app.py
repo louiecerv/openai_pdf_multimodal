@@ -14,7 +14,6 @@ from openai import OpenAI
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
-
 def extract_text_and_images_from_pdf(pdf_file_path):
     try:
         text_content = ""
