@@ -76,7 +76,7 @@ def generate_ai_response(text_content, image_urls, text_prompt):
             messages = [{"role": "user", "content": f"{text_prompt} Analyze the text: {text_content}"}]
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini", messages=messages, max_tokens=2048, stream=True
+            model="gpt-4o", messages=messages, max_tokens=2048, stream=True
         )
         return response
 
