@@ -1,6 +1,6 @@
 ---
 title: Openai Pdf Multimodal
-emoji: 👁
+emoji: 📚🔍
 colorFrom: indigo
 colorTo: purple
 sdk: streamlit
